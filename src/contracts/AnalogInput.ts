@@ -1,5 +1,14 @@
 import { assert } from 'console'
-import { PubKey, PubKeyHash, Sig, SmartContract, method, prop } from 'scrypt-ts'
+import {
+    PubKey,
+    SigHash,
+    ByteString,
+    hash256,
+    Sig,
+    SmartContract,
+    method,
+    prop,
+} from 'scrypt-ts'
 
 // https://automationforum.co/instrumentation-basics-measurement-technology/
 // https://instrumentationtools.com/scaling-sensor-output-to-engineering-units/
@@ -43,25 +52,82 @@ export class AnalogInput extends SmartContract {
         this.engineer = engineer
         this.factor = factor
         this.offset = offset
+        this.value = 0n
+        this.fieldValue = 0n
+        this.simValue = 0n
+        this.badSignal = false
+        this.isSim = false
     }
 
     @method()
-    updateValue(newValue): void {
+    updateValue(newValue: bigint): void {
         this.value = newValue
+
+        // make sure balance in the contract does not change
+        const amount: bigint = this.ctx.utxo.value
+        // outputs containing the latest state and an optional change output
+        const outputs: ByteString =
+            this.buildStateOutput(amount) + this.buildChangeOutput()
+        // verify unlocking tx has the same outputs
+        assert(this.ctx.hashOutputs == hash256(outputs), 'hashOutputs mismatch')
     }
 
-    @method()
-    public updateFieldValue(fieldValue: bigint, sig: Sig) {
-        const isSim = this.isSim
-        assert(!isSim, 'the device is in simulation mode')
+    // ANYONECANPAY_SINGLE is used here to ignore all inputs and outputs, other than the ones contains the state
+    // see https://scrypt.io/scrypt-ts/getting-started/what-is-scriptcontext#sighash-type
+    @method(SigHash.ANYONECANPAY_SINGLE)
+    public updateFieldValue(newValue: bigint, sig: Sig) {
+        assert(!this.isSim, 'the device is in simulation mode')
 
         assert(this.checkSig(sig, this.device), `checkSig failed`)
+        this.fieldValue = newValue
+        this.updateValue(this.fieldValue)
 
         assert(true, 'field value updated')
+
+        // make sure balance in the contract does not change
+        const amount: bigint = this.ctx.utxo.value
+        // outputs containing the latest state and an optional change output
+        const outputs: ByteString =
+            this.buildStateOutput(amount) + this.buildChangeOutput()
+        // verify unlocking tx has the same outputs
+        assert(this.ctx.hashOutputs == hash256(outputs), 'hashOutputs mismatch')
     }
 
-    @method()
-    public simulateValue(sig: Sig) {
-        assert(true, 'value simulated')
+    // ANYONECANPAY_SINGLE is used here to ignore all inputs and outputs, other than the ones contains the state
+    // see https://scrypt.io/scrypt-ts/getting-started/what-is-scriptcontext#sighash-type
+    @method(SigHash.ANYONECANPAY_SINGLE)
+    public setSimulationMode(simMode: boolean, sig: Sig) {
+        assert(this.checkSig(sig, this.engineer), 'checkSig failed')
+        this.isSim = simMode
+        assert(true, `simulation is ${this.isSim ? 'on' : 'off'}`)
+
+        // make sure balance in the contract does not change
+        const amount: bigint = this.ctx.utxo.value
+        // outputs containing the latest state and an optional change output
+        const outputs: ByteString =
+            this.buildStateOutput(amount) + this.buildChangeOutput()
+        // verify unlocking tx has the same outputs
+        assert(this.ctx.hashOutputs == hash256(outputs), 'hashOutputs mismatch')
+    }
+
+    // ANYONECANPAY_SINGLE is used here to ignore all inputs and outputs, other than the ones contains the state
+    // see https://scrypt.io/scrypt-ts/getting-started/what-is-scriptcontext#sighash-type
+    @method(SigHash.ANYONECANPAY_SINGLE)
+    public simulateValue(newValue: bigint, sig: Sig) {
+        assert(this.isSim, 'the device is not in simulation mode')
+
+        assert(this.checkSig(sig, this.engineer), `checkSig failed`)
+        this.simValue = newValue
+        this.updateValue(this.simValue)
+
+        assert(true, 'simulated value updated')
+
+        // make sure balance in the contract does not change
+        const amount: bigint = this.ctx.utxo.value
+        // outputs containing the latest state and an optional change output
+        const outputs: ByteString =
+            this.buildStateOutput(amount) + this.buildChangeOutput()
+        // verify unlocking tx has the same outputs
+        assert(this.ctx.hashOutputs == hash256(outputs), 'hashOutputs mismatch')
     }
 }
