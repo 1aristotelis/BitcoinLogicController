@@ -1,67 +1,77 @@
 import {
-    assert,
     PubKey,
-    SigHash,
     ByteString,
     hash256,
-    Sig,
+    assert,
     SmartContract,
     method,
     prop,
+    Sig,
+    SigHash,
 } from 'scrypt-ts'
 
-// https://automationforum.co/instrumentation-basics-measurement-technology/
-// https://instrumentationtools.com/scaling-sensor-output-to-engineering-units/
-
-// Y=MX+B
-// Where Y is the output or ENGINEERING UNITS
-// Where M is the slope or the SCALE FACTOR
-// Where X is the INPUT (millivolts, volts, etc) and
-// Where B is the OFFSET
-
-// Raw Signal ('-20mA, 1-5V, +-5V, 3-15psi) <=> Engineering Units (integer points) <=> Process Value (°C, Pa, m3/s ...)
-
-export class AnalogInput extends SmartContract {
+export class DigitalInput extends SmartContract {
     @prop()
     device: PubKey
     @prop()
     engineer: PubKey
+    @prop()
+    invert: boolean
+    @prop()
+    offTimeDelay: bigint // Pv off time delay (pv from 1 to 0) [s]
+    @prop()
+    onTimeDelay: bigint // Pv on time delay (pv from 0 to 1) [s]
     @prop(true)
-    value: bigint // in Engineering Units
+    value: boolean // process value
     @prop(true)
-    fieldValue: bigint // From Device in Engineering Units
+    fieldValue: boolean // raw from device
     @prop(true)
-    simValue: bigint // Forced Value in Engineering Units
+    simValue: boolean // simulated/forced by engineer
     @prop(true)
     badSignal: boolean
     @prop(true)
     isSim: boolean
-    @prop()
-    factor: bigint // Scale Factor
-    @prop()
-    offset: bigint // Offset
 
     constructor(
         device: PubKey,
         engineer: PubKey,
-        factor: bigint,
-        offset: bigint
+        invert: boolean,
+        offTimeDelay: bigint,
+        onTimeDelay: bigint
     ) {
         super(...arguments)
         this.device = device
         this.engineer = engineer
-        this.factor = factor
-        this.offset = offset
-        this.value = 0n
-        this.fieldValue = 0n
-        this.simValue = 0n
+        this.invert = invert
+        this.offTimeDelay = offTimeDelay
+        this.onTimeDelay = onTimeDelay
+        this.value = false
+        this.fieldValue = false
+        this.simValue = false
         this.badSignal = false
         this.isSim = false
     }
 
     @method()
-    updateValue(newValue: bigint): void {
-        this.value = newValue
+    updateValue(newValue: boolean): void {
+        //from True to False
+        if (this.value && !newValue) {
+            if (this.offTimeDelay > 0) {
+                setTimeout(
+                    () => (this.value = this.invert ? !newValue : newValue),
+                    Number(this.offTimeDelay) / 1000
+                )
+            }
+        }
+        //from False to True
+        if (!this.value && newValue) {
+            if (this.onTimeDelay > 0) {
+                setTimeout(
+                    () => (this.value = this.invert ? !newValue : newValue),
+                    Number(this.offTimeDelay) / 1000
+                )
+            }
+        }
 
         // make sure balance in the contract does not change
         const amount: bigint = this.ctx.utxo.value
@@ -75,10 +85,10 @@ export class AnalogInput extends SmartContract {
     // ANYONECANPAY_SINGLE is used here to ignore all inputs and outputs, other than the ones contains the state
     // see https://scrypt.io/scrypt-ts/getting-started/what-is-scriptcontext#sighash-type
     @method(SigHash.ANYONECANPAY_SINGLE)
-    public updateFieldValue(newValue: bigint, sig: Sig) {
+    public updateFieldValue(newValue: boolean, sig: Sig) {
         assert(!this.isSim, 'the device is in simulation mode')
 
-        assert(this.checkSig(sig, this.device), `checkSig device failed`)
+        assert(this.checkSig(sig, this.device), 'checkSig device failed')
         this.fieldValue = newValue
         this.updateValue(this.fieldValue)
 
@@ -113,10 +123,10 @@ export class AnalogInput extends SmartContract {
     // ANYONECANPAY_SINGLE is used here to ignore all inputs and outputs, other than the ones contains the state
     // see https://scrypt.io/scrypt-ts/getting-started/what-is-scriptcontext#sighash-type
     @method(SigHash.ANYONECANPAY_SINGLE)
-    public simulateValue(newValue: bigint, sig: Sig) {
+    public simulateValue(newValue: boolean, sig: Sig) {
         assert(this.isSim, 'the device is not in simulation mode')
 
-        assert(this.checkSig(sig, this.engineer), `checkSig engineer failed`)
+        assert(this.checkSig(sig, this.engineer), 'checkSig engineer failed')
         this.simValue = newValue
         this.updateValue(this.simValue)
 
