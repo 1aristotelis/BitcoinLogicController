@@ -2,3 +2,4 @@
 // to be imported in another package.
 
 export { Blclib } from './contracts/blclib'
+export { AnalogInput } from './contracts/AnalogInput'

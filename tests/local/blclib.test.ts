@@ -1,6 +1,6 @@
 import { expect } from 'chai'
 import { assert, method, SmartContract } from 'scrypt-ts'
-import { Blclib } from '../../src/contracts/blclib'
+import { Blclib } from '../../src/index'
 
 // Test lib directly:
 describe('Test SmartContractLib `Blclib`', () => {
