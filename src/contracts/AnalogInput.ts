@@ -62,14 +62,6 @@ export class AnalogInput extends SmartContract {
     @method()
     updateValue(newValue: bigint): void {
         this.value = newValue
-
-        // make sure balance in the contract does not change
-        const amount: bigint = this.ctx.utxo.value
-        // outputs containing the latest state and an optional change output
-        const outputs: ByteString =
-            this.buildStateOutput(amount) + this.buildChangeOutput()
-        // verify unlocking tx has the same outputs
-        assert(this.ctx.hashOutputs == hash256(outputs), 'hashOutputs mismatch')
     }
 
     // ANYONECANPAY_SINGLE is used here to ignore all inputs and outputs, other than the ones contains the state
